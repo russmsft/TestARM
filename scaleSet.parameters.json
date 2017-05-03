@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmSku": {
+      "value": "Standard_DS1_v2"
+    },
+    "image": {
+      "value": "CentOs7.2"
+    },
+    "authenticationType": {
+      "value": "password"
+    },
+    "username": {
+      "value": "reportinguser"
+    },
+    "password": {
+      "value": "Pa$$w0rd"
+    },
+    "customerName": {
+      "value": "Customer1"
+    }
+  }
+}

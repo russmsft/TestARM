@@ -1,0 +1,8 @@
+{
+
+  "itemDisplayName": "Azure Virtual machine Scale Set",
+  "description": "This template creates a virtual machine on a VNET that can also communicate with a Virtual Machine Scale Set on the same VNET.",
+  "summary": "Creates a virtual machine on a VNET that can also communicate with a Virtual Machine Scale Set on the same VNET.",
+  "githubUsername": "ross-p-smith",
+  "dateUpdated": "2017-04-19"
+}

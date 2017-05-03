@@ -1,0 +1,354 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "baseUrl": {
+      "defaultValue": "https://gallery.azure.com/artifact/20151001/microsoft.vmss.6.0.2/Artifacts",
+      "type": "string",
+      "metadata": {
+        "artifactsBaseUrl": "Base URL of the VMSS Template gallery package"
+      }
+    },
+    "customerName": {
+      "maxLength": 61,
+      "type": "string",
+      "metadata": {
+        "description": "String used as a base for naming resources. Must be 3-61 characters in length."
+      }
+    },
+    "vmssName": {
+      "maxLength": 61,
+      "type": "string",
+      "defaultValue": "reporting",
+      "metadata": {
+        "description": "String used as a base for naming resources. Must be 3-61 characters in length."
+      }
+    },
+    "image": {
+      "type": "string",
+      "allowedValues": [
+        "CentOs7.2",
+        "CentOs6.8"
+      ]
+    },
+    "authenticationType": {
+      "type": "string",
+      "allowedValues": [
+        "password",
+        "sshPublicKey"
+      ]
+    },
+    "username": {
+      "type": "string"
+    },
+    "instanceCount": {
+      "type": "string",
+      "defaultValue": "1"
+    },
+    "scaleOutInterval": {
+      "defaultValue": "1",
+      "type": "string"
+    },
+    "vmSku": {
+      "type": "string"
+    },
+    "autoscaleMin": {
+      "defaultValue": "1",
+      "type": "string"
+    },
+    "autoscaleMax": {
+      "defaultValue": "10",
+      "type": "string"
+    },
+    "password": {
+      "defaultValue": "",
+      "type": "securestring"
+    },
+    "scaleInCPUPercentageThreshold": {
+      "defaultValue": "25",
+      "type": "string"
+    },
+    "scaleOutCPUPercentageThreshold": {
+      "defaultValue": "75",
+      "type": "string"
+    },
+    "sshPublicKey": {
+      "defaultValue": "",
+      "type": "string"
+    },
+    "databaseStorageType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Premium_LRS"
+      ]
+    }
+  },
+  "variables": {
+    "baseTemplateUri": "[concat(parameters('baseUrl'), '/')]",
+    "vnetName": "[concat(parameters('customerName'), 'Vnet')]",
+    "databaseStorageName": "[concat('db', uniqueString(resourceGroup().id))]",
+    "databaseServerVmSize": "Standard_D2_v2"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "scaleSetStorage",
+      "apiVersion": "2016-09-01",
+      "properties": {
+        "templateLink": {
+          "contentVersion": "1.0.0.0",
+          "uri": "[concat(variables('baseTemplateUri'), 'null.json')]"
+        },
+        "mode": "Incremental",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "virtualNetwork",
+      "apiVersion": "2016-09-01",
+      "properties": {
+        "templateLink": {
+          "contentVersion": "1.0.0.0",
+          "uri": "[concat(variables('baseTemplateUri'), 'vnet.json')]"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          },
+          "location": {
+            "value": "[resourceGroup().location]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "loadBalancer",
+      "apiVersion": "2016-09-01",
+      "properties": {
+        "templateLink": {
+          "contentVersion": "1.0.0.0",
+          "uri": "[concat(variables('baseTemplateUri'), 'lb.json')]"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "osType": {
+            "value": "Linux"
+          },
+          "pipName": {
+            "value": "[concat(parameters('customerName'), 'Ip01')]"
+          },
+          "pipLabel": {
+            "value": "[concat('coins-', toLower(parameters('customerName')))]"
+          },
+          "location": {
+            "value": "[resourceGroup().location]"
+          },
+          "lbName": {
+            "value": "[concat(parameters('customerName'), 'Lb')]"
+          }
+        }
+      }
+    },
+    {
+      "name": "[variables('databaseStorageName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-01-01",
+      "kind" : "Storage",
+      "sku": {
+        "name": "[parameters('databaseStorageType')]"
+      },
+      "tags": {
+        "displayName": "databaseStorage"
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "reportingScaleSet",
+      "apiVersion": "2016-09-01",
+      "dependsOn": [
+        "virtualNetwork",
+        "scaleSetStorage",
+        "loadBalancer"
+      ],
+      "properties": {
+        "templateLink": {
+          "contentVersion": "1.0.0.0",
+          "uri": "[concat(variables('baseTemplateUri'), 'vmss.json')]"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "username": {
+            "value": "[parameters('username')]"
+          },
+          "vmSku": {
+            "value": "[parameters('vmSku')]"
+          },
+          "authenticationType": {
+            "value": "[parameters('authenticationType')]"
+          },
+          "vmssName": {
+            "value": "[parameters('vmssName')]"
+          },
+          "loadBalancerInboundNatPools": {
+            "value": "[reference('loadBalancer').outputs.loadBalancerInboundNatPools.value]"
+          },
+          "image": {
+            "value": "[parameters('image')]"
+          },
+          "osDisk": {
+            "value": "[reference('scaleSetStorage').outputs.osDisk.value]"
+          },
+          "subnetId": {
+            "value": "[reference('virtualNetwork').outputs.subnetId.value]"
+          },
+          "singlePlacementGroup": {
+            "value": "true"
+          },
+          "instanceCount": {
+            "value": "[parameters('instanceCount')]"
+          },
+          "ipConfigName": {
+            "value": "[concat(parameters('vmssName'), 'IpConfig')]"
+          },
+          "location": {
+            "value": "[resourceGroup().location]"
+          },
+          "nicName": {
+            "value": "[concat(parameters('vmssName'), 'Nic')]"
+          },
+          "password": {
+            "value": "[parameters('password')]"
+          },
+          "loadBalancerBackendAddressPools": {
+            "value": "[reference('loadBalancer').outputs.loadBalancerBackendAddressPools.value]"
+          },
+          "sshPublicKey": {
+            "value": "[parameters('sshPublicKey')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "reportingAutoScale",
+      "apiVersion": "2016-09-01",
+      "dependsOn": [
+        "reportingScaleSet"
+      ],
+      "properties": {
+        "templateLink": {
+          "contentVersion": "1.0.0.0",
+          "uri": "[concat(variables('baseTemplateUri'), 'autoscale.json')]"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "autoscaleDefault": {
+            "value": "1"
+          },
+          "scaleOutInterval": {
+            "value": "[parameters('scaleOutInterval')]"
+          },
+          "scaleOutCPUPercentageThreshold": {
+            "value": "[parameters('scaleOutCPUPercentageThreshold')]"
+          },
+          "scaleInCPUPercentageThreshold": {
+            "value": "[parameters('scaleInCPUPercentageThreshold')]"
+          },
+          "autoscaleMax": {
+            "value": "[parameters('autoscaleMax')]"
+          },
+          "autoscaleMin": {
+            "value": "[parameters('autoscaleMin')]"
+          },
+          "baseTemplateUri": {
+            "value": "[variables('baseTemplateUri')]"
+          },
+          "autoscaleYesOrNo": {
+            "value": "Yes"
+          },
+          "vmssId": {
+            "value": "[reference('reportingScaleSet').outputs.vmssId.value]"
+          },
+          "scaleInInterval": {
+            "value": "1"
+          }
+        }
+      }
+    },
+    {
+      "name": "databaseNetworkInterface",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "virtualNetwork"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[reference('virtualNetwork').outputs.subnetId.value]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "COINS-DatabaseServer",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[variables('databaseStorageName')]",
+        "databaseNetworkInterface"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('databaseServerVmSize')]"
+        },
+        "osProfile": {
+          "computerName": "COINS",
+          "adminUsername": "[parameters('username')]",
+          "adminPassword": "[parameters('password')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "OpenLogic",
+            "offer": "CentOS",
+            "sku": "7.2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "databaseServerOSDisk",
+            "vhd": {
+              "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('databaseStorageName')), '2016-01-01').primaryEndpoints.blob, 'vhds/databaseServerOSDisk.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', 'databaseNetworkInterface')]"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}
